@@ -10,6 +10,12 @@ Node ≥ 18 sans dépendance : `server.mjs` (lecture + agrégation), `index.html
   titres dans les `local_<id>.json` voisins (`cliSessionId`). Format observé, non documenté : `session_id` ou
   `sessionId`, date parfois hors de `timestamp`, copie `audit.jsonl` en double (dédoublonnée par keepMax).
   Jamais vérifié sur une vraie session Cowork (l'auteur ne l'utilise pas) : seulement sur des journaux fabriqués.
+- Chat claude.ai : AUCUN compteur local (vérifié : rien dans IndexedDB / Local Storage de l'app). Estimation seulement,
+  depuis l'export de données importé via `POST /api/chat-import` (en-tête `x-token-follow: import` obligatoire, contre
+  le CSRF ; corps = .zip ou conversations.json). `chat-export.mjs` : lecteur .zip minimal + lecture tolérante
+  (`chat_messages`|`messages`, `sender`|`role`, `content[]` sinon `text`, `attachments[].extracted_content`),
+  ≈ 3,5 caractères/token, entrée = historique cumulé. Stocké dans `chat.json` SANS le texte des messages.
+  Toujours affiché à part, marqué « ≈ » : ne jamais l'ajouter aux totaux exacts.
 - Forfait : `<app Claude Desktop>/plan-usage-history.json` (`samples[].u.fh` = % limite 5 h, `.sd` = % 7 jours),
   archivé dans `plan.jsonl` de l'historique (l'app ne garde qu'environ 30 jours).
 - Historique permanent : `~/.claude-tokens-history/` (`calls.jsonl` en ajout seul, `titles.json`, `plan.jsonl`),
@@ -30,6 +36,7 @@ Node ≥ 18 sans dépendance : `server.mjs` (lecture + agrégation), `index.html
 - macOS testé en conditions réelles. Linux (systemd et .desktop) et Windows : installation/désinstallation vérifiées en CI (`.github/workflows/install.yml`), mais pas le démarrage après une vraie ouverture de session.
 
 ## Journal des améliorations (ajout seul, le plus récent en haut)
+- 2026-10-23 : estimation des tokens du chat claude.ai depuis l'export de données (carte à part, bouton d'import, démo).
 - 2026-10-23 : sessions Cowork locales comptées (tuile + projet « Cowork (Claude Desktop) ») ; courbe d'utilisation du forfait 5 h / 7 jours ; démo avec Cowork et forfait.
 - 2026-10-23 : tableaux sans colonne coupée de 1280 à 1600 px (« Par modèle » sur 3/5 de ligne, projets et sessions en pleine largeur) ; captures regénérées.
 - 2026-10-23 : dépôt renommé `claude-code-usage-dashboard` (trouvable par recherche) ; `npm run demo` (données fictives, sert aussi aux captures du README) ; README vitrine ; CI de l'installeur sur 3 OS + variante sans systemd ; `main` protégée (7 tests requis).

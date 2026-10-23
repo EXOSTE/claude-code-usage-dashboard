@@ -7,6 +7,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir, platform } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { estimateExport } from '../chat-export.mjs';
 
 const APP_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -89,7 +90,26 @@ for (let t = now - 30 * DAY; t <= now; t += 1800_000) {
   samples.push({ t, org: 'org-demo', u: { fh: Math.min(100, ((h - 8) % 5) * int(8, 22)), sd: Math.min(100, week * 12 + int(0, 8)) } });
 }
 writeFileSync(PLAN, JSON.stringify({ version: 2, samples }));
-console.log(`Démo : ${calls} appels fictifs sur 60 jours (Claude Code + Cowork) et ${samples.length} relevés de forfait, dans ${DIR}`);
+
+// Conversations du chat claude.ai, au format de l'export, déjà « importées » dans l'historique de la démo.
+const chatTitles = ['Idées de menus pour la semaine', 'Relire ma lettre de motivation', 'Expliquer les intérêts composés',
+  'Plan de voyage à Lisbonne', 'Traduire un contrat en anglais', 'Résumer un article de recherche', 'Préparer un entretien'];
+const conversations = [];
+for (let d = 44; d >= 0; d--) {
+  for (let k = 0, n = int(0, 3); k < n; k++) {
+    let t = now - d * DAY - int(1, 10) * 3600_000;
+    const chat_messages = [];
+    for (let turn = 0, turns = int(2, 12); turn < turns && t < now; turn++) {
+      chat_messages.push({ sender: 'human', text: 'q'.repeat(int(40, 900)), created_at: new Date(t).toISOString() });
+      t += int(20, 90) * 1000;
+      chat_messages.push({ sender: 'assistant', text: 'r'.repeat(int(300, 6000)), created_at: new Date(t).toISOString() });
+      t += int(60, 600) * 1000;
+    }
+    conversations.push({ uuid: uuid(), name: chatTitles[int(0, chatTitles.length - 1)], chat_messages });
+  }
+}
+writeFileSync(join(HISTORY, 'chat.json'), JSON.stringify({ importedAt: now, conversations: estimateExport(Buffer.from(JSON.stringify(conversations))) }));
+console.log(`Démo : ${calls} appels fictifs sur 60 jours (Claude Code + Cowork), ${samples.length} relevés de forfait et ${conversations.length} conversations de chat, dans ${DIR}`);
 
 const server = spawn(process.execPath, [join(APP_DIR, 'server.mjs')], {
   cwd: APP_DIR, stdio: 'inherit',

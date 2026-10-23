@@ -85,6 +85,24 @@ L'installation et la désinstallation sont testées à chaque modification sur l
 
 Autre port : `npm run setup -- --port 4318`
 
+## Chat claude.ai : une estimation
+
+Le chat (claude.ai, l'app Claude ou mobile) ne donne **aucun compteur de tokens**, et rien n'en est gardé sur l'ordinateur. Token Follow peut seulement les **estimer** à partir de l'export de tes données :
+
+1. Sur claude.ai ou dans l'app : **Paramètres → Confidentialité → Exporter les données**.
+2. Ouvre le lien reçu par e-mail (valable 24 h) et télécharge le `.zip`.
+3. Dans le tableau de bord, carte « Chat claude.ai », clique sur **Importer l'export claude.ai (.zip)**, sans décompresser le fichier.
+
+Comment c'est estimé, et ce qu'il faut en penser :
+
+- **≈ 3,5 caractères par token.** C'est une moyenne : l'écart réel peut dépasser 20 %, dans un sens ou dans l'autre.
+- **Sortie** = la longueur des réponses de Claude. **Entrée** = tout l'historique de la conversation, renvoyé à Claude à chaque réponse, pièces jointes extraites comprises.
+- **Pas compté :** l'invite système de claude.ai, les fichiers non extraits (images, PDF scannés), la recherche web, la réflexion si elle n'est pas dans l'export, le cache. Il n'y a pas non plus d'équivalent en prix API, faute de savoir quel modèle a répondu.
+- Les estimations sont affichées **à part** (marquées « ≈ » et « estimation ») et ne s'ajoutent jamais aux totaux exacts de Claude Code.
+- L'export est une photo à un instant donné : réimporte un export plus récent pour suivre la suite. Les conversations déjà importées sont gardées, même supprimées depuis sur claude.ai.
+- **Le texte de tes conversations n'est pas conservé** : seules les dates et les estimations sont enregistrées, dans `~/.claude-tokens-history/chat.json`.
+- Le format de l'export n'est pas documenté par Anthropic. La lecture est tolérante, mais s'il change, ouvre une issue.
+
 ## Bon à savoir
 
 - **L'équivalent API n'est pas ta facture.** Avec un abonnement Claude, tu ne paies pas à l'appel : c'est ce que ces appels auraient coûté au tarif public de l'API.
@@ -131,6 +149,8 @@ npm run setup        # install: opens http://localhost:4317 and starts at every 
 ```
 
 `npm run remove` uninstalls the auto-start. Usage history is kept in `~/.claude-tokens-history`, so deleting a session in Claude doesn't erase its stats.
+
+**claude.ai chat** has no token counter. Import your data export (Settings → Privacy → Export data, the `.zip`) to get a clearly labeled **estimate** (≈ 3.5 characters per token, history re-sent on every reply; no system prompt, web search or cache). Estimates are shown separately and never added to the exact Claude Code totals; conversation text is not stored.
 
 ## Licence
 

@@ -16,6 +16,7 @@ import { homedir, platform } from 'node:os';
 import { join, basename, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { estimateCost } from './pricing.mjs';
+import { extractConversations, estimateExport } from './chat-export.mjs';
 
 const PORT = Number(process.env.PORT) || 4317;
 const ROOT = process.env.CLAUDE_PROJECTS_DIR || join(homedir(), '.claude', 'projects');
@@ -25,6 +26,7 @@ const HISTORY_DIR = process.env.TOKENS_HISTORY_DIR || join(homedir(), '.claude-t
 const CALLS_FILE = join(HISTORY_DIR, 'calls.jsonl');   // un appel par ligne, en ajout seulement
 const TITLES_FILE = join(HISTORY_DIR, 'titles.json');  // titres de session, réécrit en entier
 const PLAN_ARCHIVE = join(HISTORY_DIR, 'plan.jsonl');    // relevés du forfait, en ajout seulement
+const CHAT_FILE = join(HISTORY_DIR, 'chat.json');        // estimations du chat claude.ai (sans le texte)
 
 // Dossier de données de l'app Claude Desktop, selon le système.
 const APP_DATA = process.env.CLAUDE_APP_DIR || (
@@ -257,6 +259,69 @@ function planSummary(since) {
   return { available: true, samples, current: mine.at(-1), first: mine[0].t };
 }
 
+// --- Chat claude.ai : estimation à partir de l'export de données (voir chat-export.mjs) ---
+let chat = null; // { importedAt, conversations: [{ id, title, messages: [{ t, role, input, output }] }] }
+
+async function loadChat() {
+  chat ??= JSON.parse(await readFile(CHAT_FILE, 'utf8').catch(() => 'null')) ?? { importedAt: null, conversations: [] };
+  return chat;
+}
+
+// Un nouvel export remplace les conversations de même identifiant et garde les autres :
+// celles supprimées depuis sur claude.ai restent comptées.
+// Les imports passent l'un après l'autre : deux imports simultanés ne peuvent pas s'écraser.
+let importQueue = Promise.resolve();
+function importChat(buf) {
+  const run = importQueue.then(() => doImportChat(buf));
+  importQueue = run.catch(() => {});
+  return run;
+}
+
+async function doImportChat(buf) {
+  const fresh = estimateExport(extractConversations(buf));
+  if (!fresh.length) throw new Error('aucune conversation reconnue dans ce fichier');
+  const current = await loadChat();
+  const byId = new Map(current.conversations.map(c => [c.id, c]));
+  for (const c of fresh) byId.set(c.id, c);
+  const next = { importedAt: Date.now(), conversations: [...byId.values()] };
+  await mkdir(HISTORY_DIR, { recursive: true });
+  await writeFile(CHAT_FILE + '.tmp', JSON.stringify(next));
+  await rename(CHAT_FILE + '.tmp', CHAT_FILE);
+  chat = next;
+  return { conversations: fresh.length, messages: fresh.reduce((s, c) => s + c.messages.length, 0) };
+}
+
+function chatSummary(since) {
+  if (!chat?.conversations.length) return { available: false, importedAt: chat?.importedAt ?? null };
+  const byDay = {}, top = [];
+  let input = 0, output = 0, replies = 0, convs = 0, last = 0;
+  for (const c of chat.conversations) {
+    let ci = 0, co = 0, n = 0, cl = 0;
+    for (const m of c.messages) {
+      last = Math.max(last, m.t);
+      if (m.t < since || m.role !== 'assistant') continue;
+      const d = (byDay[localDay(m.t)] ??= { input: 0, output: 0 });
+      d.input += m.input; d.output += m.output;
+      ci += m.input; co += m.output; n++; cl = Math.max(cl, m.t);
+    }
+    if (!n) continue;
+    convs++; replies += n; input += ci; output += co;
+    top.push({ title: c.title, input: ci, output: co, replies: n, last: cl });
+  }
+  top.sort((a, b) => (b.input + b.output) - (a.input + a.output));
+  return { available: true, importedAt: chat.importedAt, exportUntil: last, conversations: convs, replies, input, output, byDay, top: top.slice(0, 10) };
+}
+
+// Corps de requête brut, plafonné pour ne pas saturer la mémoire.
+function readBody(req, limit = 300 * 1024 ** 2) {
+  return new Promise((ok, ko) => {
+    const parts = []; let size = 0;
+    req.on('data', c => { size += c.length; if (size > limit) { ko(new Error('fichier trop gros (plus de 300 Mo) : décompresse le .zip et importe seulement conversations.json')); req.destroy(); } else parts.push(c); });
+    req.on('end', () => ok(Buffer.concat(parts)));
+    req.on('error', ko);
+  });
+}
+
 // Plusieurs requêtes simultanées partagent le même balayage au lieu d'en lancer un chacune.
 function refresh() {
   return (inflight ??= (async () => {
@@ -363,7 +428,7 @@ function summary({ entries, titles, scannedAt }, days, project) {
   }));
 
   return {
-    days, project: project || null, total, previous, sources: bySource, plan: planSummary(since),
+    days, project: project || null, total, previous, sources: bySource, plan: planSummary(since), chat: chatSummary(since),
     sessions: sessions.length, daily, heat,
     models: rank(byModel), projects: rank(byProject), topSessions,
     generatedAt: new Date(scannedAt).toISOString(),
@@ -375,10 +440,26 @@ function send(res, status, type, body) {
   res.end(body);
 }
 
+// Seuls les noms locaux sont acceptés : une page qui ferait pointer son propre domaine vers 127.0.0.1
+// (rebinding DNS) ne peut ainsi ni lire les données ni importer quoi que ce soit.
+const ALLOWED_HOSTS = new Set([`localhost:${PORT}`, `127.0.0.1:${PORT}`, `[::1]:${PORT}`]);
+
 createServer(async (req, res) => {
+  if (!ALLOWED_HOSTS.has(String(req.headers.host).toLowerCase())) return send(res, 403, 'text/plain', 'Hôte refusé');
   const url = new URL(req.url, 'http://x');
   try {
+    if (url.pathname === '/api/chat-import') {
+      // En-tête obligatoire : un site web ne peut pas l'envoyer vers localhost sans autorisation CORS,
+      // qu'on ne donne pas. Une page malveillante ne peut donc pas injecter de fausses données.
+      if (req.method !== 'POST' || req.headers['x-token-follow'] !== 'import') return send(res, 403, 'text/plain', 'Refusé');
+      try {
+        return send(res, 200, 'application/json', JSON.stringify(await importChat(await readBody(req))));
+      } catch (err) {
+        return send(res, 400, 'text/plain', `Import impossible : ${err.message}`);
+      }
+    }
     if (url.pathname === '/api/usage') {
+      await loadChat();
       // « all » = depuis le premier appel présent dans les journaux.
       const all = url.searchParams.get('days') === 'all';
       const snapNow = Date.now() - snapshot.scannedAt < 30_000 ? snapshot : await refresh();

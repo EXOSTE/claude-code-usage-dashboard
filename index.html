@@ -91,6 +91,14 @@
   #tip { position: fixed; pointer-events: none; background: var(--text); color: var(--bg); padding: 6px 8px;
     border-radius: 6px; font-size: 12px; display: none; white-space: pre; z-index: 10; font-variant-numeric: tabular-nums; }
   .err { color: var(--c-out); }
+  .badge { display: inline-block; font-size: 11px; font-weight: 600; letter-spacing: .02em; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 999px; border: 1px dashed var(--muted); color: var(--muted); vertical-align: 2px; margin-left: 6px; }
+  .est .value::before { content: '≈ '; color: var(--muted); font-weight: 400; }
+  .chat-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 4px 0 12px; }
+  .chat-kpis .kpi { border-style: dashed; }
+  .chat-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
+  #chatCard ol { margin: 6px 0 0; padding-left: 20px; color: var(--muted); }
+  #chatChart { height: 160px; }
 </style>
 </head>
 <body>
@@ -125,6 +133,27 @@
     <p class="sr" id="chartDesc"></p>
     <div class="legend" id="legend"></div>
     <details><summary>Voir les données du graphique</summary><div class="tablewrap" id="dailyTable"></div></details>
+  </section>
+
+  <section class="card" id="chatCard">
+    <h2>Chat claude.ai <span class="badge">estimation</span></h2>
+    <div class="sub">Le chat ne donne aucun compteur de tokens : ces chiffres sont <strong>estimés</strong> à partir de la longueur des messages
+      de l'export de tes données (≈ 3,5 caractères par token, écart possible de plus de 20 %). L'entrée compte l'historique renvoyé
+      à chaque réponse, mais pas l'invite système de claude.ai, la recherche web ni le cache. Ils ne s'ajoutent pas aux totaux du haut.
+      Le texte des conversations n'est pas conservé, seulement les estimations.</div>
+    <div id="chatBody"></div>
+    <div class="chat-actions">
+      <button type="button" class="btn" id="chatImport">Importer l'export claude.ai (.zip)</button>
+      <input type="file" id="chatFile" accept=".zip,.json,application/zip,application/json" hidden>
+      <span class="sub" id="chatStatus" role="status" aria-live="polite"></span>
+    </div>
+    <details><summary>Comment obtenir l'export</summary>
+      <ol>
+        <li>Sur claude.ai ou dans l'app : Paramètres → Confidentialité → Exporter les données.</li>
+        <li>Ouvre le lien reçu par e-mail (valable 24 h) et télécharge le .zip.</li>
+        <li>Importe ce .zip ici, sans le décompresser. Pour mettre à jour, importe un export plus récent : les conversations déjà importées sont gardées.</li>
+      </ol>
+    </details>
   </section>
 
   <section class="card" id="planCard" hidden>
@@ -397,9 +426,54 @@ function renderPlan(d) {
     + PLAN_SERIES.map(s => `${s.label} : ${cur?.[s.key] ?? 'inconnu'} % au dernier relevé (${when}), pic ${peak(s.key)} %`).join(' ; ') + '.';
 }
 
+// Chat claude.ai : estimations seulement, affichées à part et marquées « ≈ ».
+function renderChat(d) {
+  const c = d.chat, body = document.getElementById('chatBody');
+  // Le chat n'a pas de projet : masqué quand la page est filtrée, pour ne pas laisser croire qu'il en fait partie.
+  document.getElementById('chatCard').hidden = !!d.project;
+  if (d.project) return;
+  if (!c?.available) {
+    body.innerHTML = `<p class="sub">${c?.importedAt ? 'Aucune réponse de Claude sur cette période dans l’export importé.' : 'Aucun export importé pour l’instant.'}</p>`;
+    return;
+  }
+  const until = new Date(c.exportUntil).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+  body.innerHTML = `<div class="chat-kpis">
+      <div class="card kpi est"><div class="label">Sortie (réponses de Claude)</div><div class="value">${fmt(c.output)}</div><div class="delta">tokens estimés</div></div>
+      <div class="card kpi est"><div class="label">Entrée (historique renvoyé)</div><div class="value">${fmt(c.input)}</div><div class="delta">tokens estimés</div></div>
+      <div class="card kpi"><div class="label">Réponses</div><div class="value">${full(c.replies)}</div><div class="delta">dans ${full(c.conversations)} conversation${c.conversations > 1 ? 's' : ''}</div></div>
+      <div class="card kpi"><div class="label">Données jusqu'au</div><div class="value" style="font-size:clamp(14px,9cqi,18px)">${until}</div>
+        <div class="delta">import du ${new Date(c.importedAt).toLocaleDateString('fr-FR')} · réimporte pour la suite</div></div>
+    </div>
+    <svg class="chart" id="chatChart" role="img" aria-label="Tokens estimés du chat par jour"></svg>
+    <div class="legend"><span><span class="dot" style="background:var(--c-in);opacity:.55"></span>Entrée estimée</span>
+      <span><span class="dot" style="background:var(--c-out)"></span>Sortie estimée</span></div>
+    <div class="tablewrap"><table>
+      <tr><th>Conversation</th><th>Réponses</th><th>≈ Entrée</th><th>≈ Sortie</th><th>Dernière réponse</th></tr>
+      ${c.top.map(t => `<tr><td title="${esc(t.title ?? '')}">${t.title ? esc(t.title) : '<span class="muted">sans titre</span>'}</td>
+        <td>${full(t.replies)}</td><td>${fmt(t.input)}</td><td>${fmt(t.output)}</td><td>${shortDate(t.last)}</td></tr>`).join('')}
+    </table></div>`;
+  // Barres par jour (entrée + sortie estimées), sur le même axe de jours que le graphique principal.
+  const svg = document.getElementById('chatChart');
+  const W = svg.clientWidth || 800, H = 160, L = 52, B = 20, T = 8;
+  const rows = d.daily.map(r => ({ day: r.day, ...(c.byDay[r.day] ?? { input: 0, output: 0 }) }));
+  const max = niceMax(Math.max(1, ...rows.map(r => r.input + r.output)));
+  const bw = (W - L) / rows.length, y = v => H - B - v / max * (H - B - T);
+  let out = '';
+  for (let i = 0; i <= 2; i++) { const v = max * i / 2; out += `<line x1="${L}" x2="${W}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/><text x="${L - 6}" y="${y(v) + 3}" text-anchor="end">${fmt(Math.round(v))}</text>`; }
+  rows.forEach((r, i) => {
+    const x = L + i * bw + bw * .15, w = Math.max(1, bw * .7);
+    if (r.input) out += `<rect x="${x}" y="${y(r.input)}" width="${w}" height="${y(0) - y(r.input)}" fill="var(--c-in)" opacity=".55"/>`;
+    if (r.output) out += `<rect x="${x}" y="${y(r.input + r.output)}" width="${w}" height="${y(r.input) - y(r.input + r.output)}" fill="var(--c-out)"/>`;
+    out += `<rect class="hit" x="${L + i * bw}" y="${T}" width="${bw}" height="${H - B - T}" fill="transparent" data-chat="${i}"/>`;
+  });
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.innerHTML = out;
+  svg.chatRows = rows;
+}
+
 function render() {
   if (!data) return;
-  renderKpis(data); renderChart(data); renderDailyTable(data); renderHeat(data); renderPlan(data);
+  renderKpis(data); renderChart(data); renderDailyTable(data); renderHeat(data); renderPlan(data); renderChat(data);
   renderTable('models', data.models);
   renderTable('projects', data.projects, { clickable: true });
   renderSessions(data.topSessions);
@@ -499,8 +573,30 @@ document.getElementById('planChart').addEventListener('mousemove', e => {
   showTip(e, new Date(p.t).toLocaleString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
     + '\n' + PLAN_SERIES.map(s => `${s.label} : ${p[s.key] ?? '—'} %`).join('\n'));
 });
+document.getElementById('chatImport').addEventListener('click', () => document.getElementById('chatFile').click());
+document.getElementById('chatFile').addEventListener('change', async e => {
+  const file = e.target.files[0]; if (!file) return;
+  const status = document.getElementById('chatStatus');
+  status.textContent = `Lecture de ${file.name}…`;
+  try {
+    const r = await fetch('/api/chat-import', { method: 'POST', body: file,
+      headers: { 'x-token-follow': 'import', 'content-type': 'application/octet-stream' } });
+    if (!r.ok) throw new Error(await r.text());
+    const res = await r.json();
+    status.textContent = `✔ ${full(res.conversations)} conversations importées (${full(res.messages)} messages).`;
+    load();
+  } catch (err) {
+    status.innerHTML = `<span class="err">${esc(err.message)}</span>`;
+  } finally { e.target.value = ''; }
+});
+document.getElementById('chatBody').addEventListener('mousemove', e => {
+  const i = e.target.dataset?.chat; if (i == null) { tip.style.display = 'none'; return; }
+  const r = document.getElementById('chatChart').chatRows[i];
+  showTip(e, `${longDay(r.day)}\nEntrée estimée : ≈ ${full(r.input)}\nSortie estimée : ≈ ${full(r.output)}`);
+});
+document.getElementById('chatBody').addEventListener('mouseleave', () => tip.style.display = 'none');
 for (const id of ['chart', 'heat', 'planChart']) document.getElementById(id).addEventListener('mouseleave', () => tip.style.display = 'none');
-let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (data) { renderChart(data); renderPlan(data); } }, 100); });
+let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (data) { renderChart(data); renderPlan(data); renderChat(data); } }, 100); });
 
 renderLegend(); load(); schedule();
 </script>
