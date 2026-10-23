@@ -127,6 +127,15 @@
     <details><summary>Voir les données du graphique</summary><div class="tablewrap" id="dailyTable"></div></details>
   </section>
 
+  <section class="card" id="planCard" hidden>
+    <h2>Utilisation du forfait</h2>
+    <div class="sub">Part des limites de 5 h et de 7 jours, tous produits Claude confondus (Claude Code, Cowork, claude.ai),
+      y compris les sessions Cowork lancées dans le cloud. Relevée par l'app Claude Desktop quand elle est ouverte.</div>
+    <svg class="chart" id="planChart" role="img" aria-labelledby="planDesc"></svg>
+    <p class="sr" id="planDesc"></p>
+    <div class="legend" id="planLegend"></div>
+  </section>
+
   <div class="split">
     <section class="card">
       <h2>Quand tu utilises Claude</h2>
@@ -151,6 +160,7 @@ const SERIES = [
   { key: 'cacheRead', label: 'Lecture cache', color: 'var(--c-cr)', on: false },
 ];
 const DAYS_FR = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+const DAY = 86400_000;
 
 // L'état vit dans l'URL : un rechargement ou un lien partagé garde la période et le projet.
 const qs = new URLSearchParams(location.search);
@@ -202,6 +212,10 @@ function renderKpis(d) {
     { l: 'Jour le plus chargé', txt: peak && peak.calls ? fmt(billable(peak)) : '—',
       s: peak && peak.calls ? longDay(peak.day) : '' },
   ];
+  const cw = d.sources?.cowork;
+  if (cw?.calls) tiles.push({ l: 'Cowork', c: 'var(--c-cw)', txt: fmt(billable(cw)),
+    s: `${pct(billable(cw) / Math.max(1, billable(t)))} des tokens facturables · ${full(cw.calls)} appels`,
+    title: 'Sessions Cowork exécutées sur cet ordinateur. Celles lancées dans le cloud n’apparaissent que dans « Utilisation du forfait ».' });
   if (t.costKnown && t.calls) tiles.splice(4, 0, {
     l: 'Équivalent API', txt: usdShort(t.cost), exact: usdExact(t.cost),
     s: `${usd(t.cost / Math.max(1, activeDays))} par jour actif · ${deltaOrSince(t.cost, p.costKnown ? p.cost : 0)}`,
@@ -329,17 +343,72 @@ function renderProjectSelect(d) {
   document.getElementById('chipText').textContent = project ? `Projet : ${project}` : '';
 }
 
+// Courbe du % de forfait utilisé (5 h et 7 jours), coupée là où l'app n'a rien relevé pendant 3 h.
+const PLAN_SERIES = [
+  { key: 'fh', label: 'Limite de 5 h', color: 'var(--c-out)' },
+  { key: 'sd', label: 'Limite de 7 jours', color: 'var(--c-in)' },
+];
+function renderPlan(d) {
+  const card = document.getElementById('planCard');
+  card.hidden = !d.plan?.available;
+  if (card.hidden) return;
+  const svg = document.getElementById('planChart');
+  const S = d.plan.samples;
+  const W = svg.clientWidth || 800, H = 260, L = 52, B = 22, T = 10, R = 8;
+  const x1 = Date.now(), x0 = x1 - d.days * DAY;
+  const top = Math.max(100, ...S.flatMap(p => [p.fh ?? 0, p.sd ?? 0]));
+  const x = t => L + (t - x0) / (x1 - x0) * (W - L - R);
+  const y = v => H - B - v / top * (H - B - T);
+  let out = '';
+  for (const v of [0, 25, 50, 75, 100]) out += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/>
+    <text x="${L - 6}" y="${y(v) + 3}" text-anchor="end">${v} %</text>`;
+  const ticks = Math.max(2, Math.min(7, Math.floor((W - L) / 90)));
+  for (let i = 0; i <= ticks; i++) {
+    const t = x0 + (x1 - x0) * i / ticks;
+    out += `<text x="${x(t)}" y="${H - 6}" text-anchor="${i === 0 ? 'start' : i === ticks ? 'end' : 'middle'}">${
+      d.days <= 1 ? new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : shortDate(t)}</text>`;
+  }
+  const GAP = 3 * 3600_000;
+  for (const s of PLAN_SERIES) {
+    const pts = S.filter(p => p[s.key] != null);
+    let path = '';
+    pts.forEach((p, i) => {
+      const joinPrev = i > 0 && p.t - pts[i - 1].t < GAP;
+      const joinNext = i < pts.length - 1 && pts[i + 1].t - p.t < GAP;
+      const px = x(p.t).toFixed(1), py = y(p[s.key]).toFixed(1);
+      path += `${joinPrev ? 'L' : 'M'}${px},${py}`;
+      // Un relevé isolé ne trace aucun segment : on le montre par un point.
+      if (!joinPrev && !joinNext) out += `<circle cx="${px}" cy="${py}" r="2.5" fill="${s.color}"/>`;
+    });
+    out += `<path d="${path}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round"/>`;
+  }
+  out += `<rect class="hit" x="${L}" y="${T}" width="${W - L - R}" height="${H - B - T}" fill="transparent" data-plan="1"/>`;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.innerHTML = out;
+  svg.dataset.geom = JSON.stringify({ L, R, W, x0, x1 });
+
+  // Le dernier relevé peut dater : on dit de quand il est plutôt que « maintenant ».
+  const cur = d.plan.current, peak = k => Math.max(0, ...S.map(p => p[k] ?? 0));
+  const when = cur ? new Date(cur.t).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+  document.getElementById('planLegend').innerHTML = PLAN_SERIES.map(s => `<span><span class="dot" style="background:${s.color}"></span>
+    ${s.label} : <strong>${cur?.[s.key] ?? '—'} %</strong> · pic ${peak(s.key)} % sur la période</span>`).join('')
+    + `<span>Dernier relevé : ${when}${S.length ? '' : ' · aucun sur cette période'}</span>`;
+  document.getElementById('planDesc').textContent = `Courbe de l'utilisation du forfait : ${S.length} relevés. `
+    + PLAN_SERIES.map(s => `${s.label} : ${cur?.[s.key] ?? 'inconnu'} % au dernier relevé (${when}), pic ${peak(s.key)} %`).join(' ; ') + '.';
+}
+
 function render() {
   if (!data) return;
-  renderKpis(data); renderChart(data); renderDailyTable(data); renderHeat(data);
+  renderKpis(data); renderChart(data); renderDailyTable(data); renderHeat(data); renderPlan(data);
   renderTable('models', data.models);
   renderTable('projects', data.projects, { clickable: true });
   renderSessions(data.topSessions);
   renderProjectSelect(data);
-  const arch = data.total.archivedCalls
-    ? ` · dont ${fmt(data.total.archivedTokens)} tokens de sessions supprimées, conservés par l'historique` : '';
+  const arch = (data.total.archivedCalls
+    ? ` · dont ${fmt(data.total.archivedTokens)} tokens de sessions supprimées, conservés par l'historique` : '')
+    + (data.total.undatedCalls ? ` · ${full(data.total.undatedCalls)} appels sans date, placés au jour de leur fichier` : '');
   document.getElementById('status').textContent =
-    `Données de ~/.claude/projects + historique${arch} · lues à ${new Date(data.generatedAt).toLocaleTimeString('fr-FR')} · actualisation auto chaque minute`;
+    `Données de Claude Code${data.sources?.cowork?.calls ? ' et Cowork' : ''} + historique${arch} · lues à ${new Date(data.generatedAt).toLocaleTimeString('fr-FR')} · actualisation auto chaque minute`;
 }
 
 function syncUrl() {
@@ -391,8 +460,9 @@ document.getElementById('legend').addEventListener('change', e => {
 
 document.getElementById('export').addEventListener('click', () => {
   if (!data) return;
-  const head = ['jour', 'entree', 'sortie', 'ecriture_cache', 'lecture_cache', 'appels', 'equivalent_api_usd'];
-  const rows = data.daily.map(r => [r.day, r.input, r.output, r.cacheWrite, r.cacheRead, r.calls, r.costKnown ? r.cost.toFixed(2).replace('.', ',') : '']);
+  const head = ['jour', 'entree', 'sortie', 'ecriture_cache', 'lecture_cache', 'appels', 'equivalent_api_usd', 'dont_cowork_facturables'];
+  const rows = data.daily.map(r => [r.day, r.input, r.output, r.cacheWrite, r.cacheRead, r.calls,
+    r.costKnown ? r.cost.toFixed(2).replace('.', ',') : '', r.coworkBillable]);
   // Point-virgule + BOM : Excel en français ouvre le fichier correctement.
   const csv = '﻿' + [head, ...rows].map(r => r.join(';')).join('\n');
   const a = Object.assign(document.createElement('a'), {
@@ -419,8 +489,18 @@ document.getElementById('heat').addEventListener('mousemove', e => {
   const h = e.target.dataset?.h; if (!h) { tip.style.display = 'none'; return; }
   showTip(e, h);
 });
-for (const id of ['chart', 'heat']) document.getElementById(id).addEventListener('mouseleave', () => tip.style.display = 'none');
-let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => data && renderChart(data), 100); });
+document.getElementById('planChart').addEventListener('mousemove', e => {
+  const svg = e.currentTarget, S = data?.plan?.samples;
+  if (!e.target.dataset?.plan || !S?.length) { tip.style.display = 'none'; return; }
+  const { L, R, W, x0, x1 } = JSON.parse(svg.dataset.geom);
+  const box = svg.getBoundingClientRect();
+  const t = x0 + ((e.clientX - box.left) * W / box.width - L) / (W - L - R) * (x1 - x0);
+  const p = S.reduce((a, b) => Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a);
+  showTip(e, new Date(p.t).toLocaleString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
+    + '\n' + PLAN_SERIES.map(s => `${s.label} : ${p[s.key] ?? '—'} %`).join('\n'));
+});
+for (const id of ['chart', 'heat', 'planChart']) document.getElementById(id).addEventListener('mouseleave', () => tip.style.display = 'none');
+let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => { if (data) { renderChart(data); renderPlan(data); } }, 100); });
 
 renderLegend(); load(); schedule();
 </script>
