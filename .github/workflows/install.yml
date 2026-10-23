@@ -67,6 +67,14 @@ jobs:
       - name: Installation
         run: npm run setup -- --port "$PORT_TEST" --no-open
 
+      - name: Fichier de démarrage créé
+        run: |
+          case "$RUNNER_OS" in
+            Linux)   ls -la ~/.config/systemd/user/token-follow.service ~/.config/autostart/token-follow.desktop ~/.config/token-follow/start.sh 2>&1 || true ;;
+            Windows) ls -la "$APPDATA/Microsoft/Windows/Start Menu/Programs/Startup/token-follow.vbs" ;;
+            macOS)   ls -la ~/Library/LaunchAgents/com.token-follow.plist ;;
+          esac
+
       - name: État
         run: |
           npm run status -- --port "$PORT_TEST" | tee status.txt
