@@ -1,7 +1,7 @@
 # Token Follow
 
 Tableau de bord local (http://localhost:4317) de la consommation de tokens Claude Code.
-Node ≥ 18 sans dépendance : `server.mjs` (lecture + agrégation), `index.html` (page),
+Node ≥ 18 sans dépendance : `server.mjs` (lecture + agrégation), `index.html` (page), `scripts/demo.mjs` (données fictives),
 `pricing.mjs` (équivalent API), `scripts/service.mjs` (installation du démarrage auto).
 
 ## Données
@@ -21,9 +21,10 @@ Node ≥ 18 sans dépendance : `server.mjs` (lecture + agrégation), `index.html
   ou dossier Démarrage Windows (`token-follow.vbs`). Journal : `server.log` (ignoré par git).
 - Après une modif de `server.mjs` ou `pricing.mjs` : relancer `npm run setup` (il remplace l'installation existante).
   `index.html` est relu à chaque requête, un simple rechargement suffit.
-- Seule l'installation macOS a été testée en conditions réelles ; Linux et Windows sont écrits mais non vérifiés.
+- macOS testé en conditions réelles. Linux (systemd et .desktop) et Windows : installation/désinstallation vérifiées en CI (`.github/workflows/install.yml`), mais pas le démarrage après une vraie ouverture de session.
 
 ## Journal des améliorations (ajout seul, le plus récent en haut)
+- 2026-10-23 : dépôt renommé `claude-code-usage-dashboard` (trouvable par recherche) ; `npm run demo` (données fictives, sert aussi aux captures du README) ; README vitrine ; CI de l'installeur sur 3 OS + variante sans systemd ; `main` protégée (7 tests requis).
 - 2026-10-23 : dépôt GitHub public, installeur multiplateforme, chemins Windows.
 - 2026-10-19 : balayage auto toutes les 5 min (sans visiteur, l'historique ne se remplissait pas).
 - 2026-10-19 : création ; historique permanent ; démarrage auto ; équivalent API ; période « Tout ».
