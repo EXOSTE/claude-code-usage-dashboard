@@ -14,6 +14,7 @@ const i = args.indexOf('--port');
 const PORT = Number(i >= 0 ? args[i + 1] : 4318);
 const DIR = join(tmpdir(), 'token-follow-demo');
 const PROJECTS = join(DIR, 'projects'), HISTORY = join(DIR, 'history');
+const COWORK = join(DIR, 'cowork'), PLAN = join(DIR, 'plan-usage-history.json');
 
 // Générateur pseudo-aléatoire à graine fixe : la démo est la même à chaque lancement.
 let seed = 42;
@@ -29,6 +30,7 @@ const projects = [
   ['site-vitrine', 2, ['Refonte de l\'accueil', 'Formulaire de contact accessible']],
   ['scripts-data', 1, ['Export mensuel des ventes', 'Nettoyer les doublons clients']],
 ];
+const coworkTitles = ['Synthèse des retours clients', 'Préparer le comité du lundi', 'Tableau des dépenses du trimestre', 'Trier la boîte de réception'];
 const models = [['claude-opus-5-5', 55], ['claude-sonnet-5-5', 30], ['claude-haiku-5-5', 10], ['claude-fable-5-1', 5]];
 
 rmSync(DIR, { recursive: true, force: true });
@@ -63,16 +65,36 @@ for (let d = 59; d >= 0; d--) {
         },
       }));
     }
+    // Une session sur six est une session Cowork : même format, rangée comme le fait Claude Desktop.
+    if (rnd() < 1 / 6) {
+      const local = `local_${uuid()}`, base = join(COWORK, 'org-demo', 'user-demo');
+      const dir = join(base, local, '.claude', 'projects', '-sessions-demo');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, `${id}.jsonl`), lines.slice(1).join('\n') + '\n');
+      writeFileSync(join(base, `${local}.json`), JSON.stringify({ sessionId: local, cliSessionId: id, title: coworkTitles[int(0, coworkTitles.length - 1)] }));
+      continue;
+    }
     const dir = join(PROJECTS, `-home-demo-code-${name}`);
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, `${id}.jsonl`), lines.join('\n') + '\n');
   }
 }
-console.log(`Démo : ${calls} appels fictifs sur 60 jours, dans ${DIR}`);
+// Relevés du forfait comme ceux de Claude Desktop : toutes les 30 min en journée, avec la fenêtre
+// de 5 h qui monte puis retombe, et la limite de 7 jours qui grimpe lentement chaque semaine.
+const samples = [];
+for (let t = now - 30 * DAY; t <= now; t += 1800_000) {
+  const d = new Date(t), h = d.getHours();
+  if (h < 8 || h > 20) continue;
+  const week = (d.getDay() + 6) % 7;
+  samples.push({ t, org: 'org-demo', u: { fh: Math.min(100, ((h - 8) % 5) * int(8, 22)), sd: Math.min(100, week * 12 + int(0, 8)) } });
+}
+writeFileSync(PLAN, JSON.stringify({ version: 2, samples }));
+console.log(`Démo : ${calls} appels fictifs sur 60 jours (Claude Code + Cowork) et ${samples.length} relevés de forfait, dans ${DIR}`);
 
 const server = spawn(process.execPath, [join(APP_DIR, 'server.mjs')], {
   cwd: APP_DIR, stdio: 'inherit',
-  env: { ...process.env, PORT: String(PORT), CLAUDE_PROJECTS_DIR: PROJECTS, TOKENS_HISTORY_DIR: HISTORY },
+  env: { ...process.env, PORT: String(PORT), CLAUDE_PROJECTS_DIR: PROJECTS, TOKENS_HISTORY_DIR: HISTORY,
+    COWORK_SESSIONS_DIR: COWORK, CLAUDE_PLAN_USAGE_FILE: PLAN },
 });
 server.on('exit', code => process.exit(code ?? 0));
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => server.kill(sig));
