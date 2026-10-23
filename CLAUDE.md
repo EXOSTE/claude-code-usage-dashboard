@@ -9,7 +9,12 @@ Node ≥ 18 sans dépendance : `server.mjs` (lecture + agrégation), `index.html
 - Cowork : `<app Claude Desktop>/local-agent-mode-sessions/**/*.jsonl` (source `cowork`, projet « Cowork (Claude Desktop) »), seulement sous `.claude/projects/` ou `audit.jsonl` (le reste = plugins),
   titres dans les `local_<id>.json` voisins (`cliSessionId`). Format observé, non documenté : `session_id` ou
   `sessionId`, date parfois hors de `timestamp`, copie `audit.jsonl` en double (dédoublonnée par keepMax).
-  Jamais vérifié sur une vraie session Cowork (l'auteur ne l'utilise pas) : seulement sur des journaux fabriqués.
+  Constaté sur macOS (Claude Desktop, VM 2.1.299, 2026-10-23) : ce dossier ne contient QUE des plugins. Une tâche Cowork
+  « cloud » (id `cse_…`, listée dans `remote-session-spaces.json`) ne laisse aucun journal ; une tâche locale tourne
+  dans la VM (`coworkd`, CLI dans `/usr/local/bin/claude`) et écrit sur son disque `/sessions` (ext4, reformaté à
+  chaque démarrage de la VM, pas de signature ext4 lisible dans `vm_bundles/…/sessiondata.img`). Donc : aucun token
+  Cowork lisible sur macOS. Lecture gardée pour d'éventuelles versions qui écrivent sur l'hôte (rapports Windows),
+  jamais vue fonctionner. Ne pas réaffirmer dans le README que les tokens Cowork sont suivis sans preuve sur une vraie session.
 - Forfait : `<app Claude Desktop>/plan-usage-history.json` (`samples[].u.fh` = % limite 5 h, `.sd` = % 7 jours),
   archivé dans `plan.jsonl` de l'historique (l'app ne garde qu'environ 30 jours).
 - Historique permanent : `~/.claude-tokens-history/` (`calls.jsonl` en ajout seul, `titles.json`, `plan.jsonl`),
@@ -30,6 +35,7 @@ Node ≥ 18 sans dépendance : `server.mjs` (lecture + agrégation), `index.html
 - macOS testé en conditions réelles. Linux (systemd et .desktop) et Windows : installation/désinstallation vérifiées en CI (`.github/workflows/install.yml`), mais pas le démarrage après une vraie ouverture de session.
 
 ## Journal des améliorations (ajout seul, le plus récent en haut)
+- 2026-10-23 : README corrigé sur Cowork : tokens non lisibles sur macOS (cloud et VM), seule la courbe du forfait le suit.
 - 2026-10-23 : sessions Cowork locales comptées (tuile + projet « Cowork (Claude Desktop) ») ; courbe d'utilisation du forfait 5 h / 7 jours ; démo avec Cowork et forfait.
 - 2026-10-23 : tableaux sans colonne coupée de 1280 à 1600 px (« Par modèle » sur 3/5 de ligne, projets et sessions en pleine largeur) ; captures regénérées.
 - 2026-10-23 : dépôt renommé `claude-code-usage-dashboard` (trouvable par recherche) ; `npm run demo` (données fictives, sert aussi aux captures du README) ; README vitrine ; CI de l'installeur sur 3 OS + variante sans systemd ; `main` protégée (7 tests requis).
