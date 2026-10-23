@@ -17,6 +17,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         node: [18, 22]
+        desktop: [false]
         include:
           # Les runners Ubuntu ont un systemd --user : on le rend injoignable pour
           # tester l'autre branche (.desktop + start.sh + lancement détaché).
@@ -130,8 +131,10 @@ jobs:
           '
           npm run status -- --port "$PORT_TEST" | tee status.txt
           grep -q "Service non installé · serveur arrêté" status.txt
-          ! ls ~/.config/autostart/token-follow.desktop ~/.config/token-follow ~/.config/systemd/user/token-follow.service \
-            ~/Library/LaunchAgents/com.token-follow.plist "$APPDATA/Microsoft/Windows/Start Menu/Programs/Startup/token-follow.vbs" 2>/dev/null
+          for f in ~/.config/autostart/token-follow.desktop ~/.config/token-follow ~/.config/systemd/user/token-follow.service \
+            ~/Library/LaunchAgents/com.token-follow.plist "${APPDATA:-/nonexistent}/Microsoft/Windows/Start Menu/Programs/Startup/token-follow.vbs"; do
+            if [ -e "$f" ]; then echo "Reste après désinstallation : $f"; exit 1; fi
+          done
 
       - name: Journal du serveur (en cas d'échec)
         if: failure()
