@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "tokens", "url": "http://localhost:4317" }
+  ]
+}

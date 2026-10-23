@@ -1,0 +1,16 @@
+{
+  "name": "token-follow",
+  "version": "1.0.0",
+  "description": "Tableau de bord local de la consommation de tokens Claude Code (et de son équivalent en prix API).",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node server.mjs",
+    "setup": "node scripts/service.mjs install",
+    "remove": "node scripts/service.mjs uninstall",
+    "status": "node scripts/service.mjs status"
+  },
+  "repository": { "type": "git", "url": "https://github.com/EXOSTE/Token-follow.git" }
+}
