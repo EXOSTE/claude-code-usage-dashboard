@@ -24,6 +24,7 @@ Node ≥ 18 sans dépendance : `server.mjs` (lecture + agrégation), `index.html
 - macOS testé en conditions réelles. Linux (systemd et .desktop) et Windows : installation/désinstallation vérifiées en CI (`.github/workflows/install.yml`), mais pas le démarrage après une vraie ouverture de session.
 
 ## Journal des améliorations (ajout seul, le plus récent en haut)
+- 2026-10-23 : tableaux sans colonne coupée de 1280 à 1600 px (« Par modèle » sur 3/5 de ligne, projets et sessions en pleine largeur) ; captures regénérées.
 - 2026-10-23 : dépôt renommé `claude-code-usage-dashboard` (trouvable par recherche) ; `npm run demo` (données fictives, sert aussi aux captures du README) ; README vitrine ; CI de l'installeur sur 3 OS + variante sans systemd ; `main` protégée (7 tests requis).
 - 2026-10-23 : dépôt GitHub public, installeur multiplateforme, chemins Windows.
 - 2026-10-19 : balayage auto toutes les 5 min (sans visiteur, l'historique ne se remplissait pas).
