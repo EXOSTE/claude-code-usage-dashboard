@@ -1,7 +1,7 @@
 # Token Follow
 
 Tableau de bord local (http://localhost:4317) de la consommation de tokens Claude Code.
-Node ≥ 18 sans dépendance : `server.mjs` (lecture + agrégation), `index.html` (page),
+Node ≥ 18 sans dépendance : `server.mjs` (lecture + agrégation), `index.html` (page), `scripts/demo.mjs` (données fictives),
 `pricing.mjs` (équivalent API), `scripts/service.mjs` (installation du démarrage auto).
 
 ## Données

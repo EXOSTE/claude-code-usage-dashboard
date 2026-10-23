@@ -1,0 +1,32 @@
+# TEMPORAIRE : prend les captures du README sur les données de démo. Supprimé avant fusion.
+name: Captures
+on: push
+jobs:
+  shots:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: |
+          node scripts/demo.mjs --no-open --port 4318 &
+          npm i --no-save playwright@1.49.1
+          npx playwright install chromium
+          cat > shots.mjs <<'JS'
+          import { chromium } from 'playwright';
+          const browser = await chromium.launch();
+          for (const [scheme, file] of [['light', 'docs/apercu-clair.png'], ['dark', 'docs/apercu-sombre.png']]) {
+            const page = await browser.newPage({ viewport: { width: 1280, height: 1000 }, deviceScaleFactor: 2, colorScheme: scheme, locale: 'fr-FR', timezoneId: 'Europe/Paris' });
+            await page.goto('http://localhost:4318/');
+            await page.waitForFunction(() => !/Chargement/.test(document.querySelector('#status')?.textContent || 'Chargement'));
+            await page.waitForTimeout(800);
+            await page.screenshot({ path: file });
+            await page.screenshot({ path: file.replace('.png', '-complet.png'), fullPage: true });
+          }
+          await browser.close();
+          JS
+          mkdir -p docs
+          for i in $(seq 30); do curl -sf localhost:4318/ >/dev/null && break; sleep 1; done
+          node shots.mjs
+      - uses: actions/upload-artifact@v4
+        with: { name: captures, path: docs/*.png }
