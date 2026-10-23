@@ -1,0 +1,109 @@
+# Vérifie l'installeur (scripts/service.mjs) sur les trois systèmes :
+# installation, réponse de l'API sur un faux journal, puis désinstallation.
+name: Installeur
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  install:
+    name: ${{ matrix.os }} · Node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node: [18, 22]
+    defaults:
+      run:
+        shell: bash
+    env:
+      PORT_TEST: 4399
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Faux journal Claude Code et dossiers temporaires
+        run: |
+          node -e '
+            const { mkdirSync, writeFileSync } = require("node:fs");
+            const { join } = require("node:path");
+            const tmp = process.env.RUNNER_TEMP;
+            const projects = join(tmp, "claude-projects"), history = join(tmp, "tokens-history");
+            const dir = join(projects, "-home-ci-demo");
+            mkdirSync(dir, { recursive: true });
+            mkdirSync(history, { recursive: true });
+            const line = {
+              type: "assistant",
+              sessionId: "00000000-0000-4000-8000-000000000001",
+              requestId: "req_ci_0001",
+              timestamp: new Date(Date.now() - 60_000).toISOString(),
+              cwd: "/home/ci/demo",
+              message: {
+                id: "msg_ci_0001",
+                model: "claude-sonnet-5-5",
+                role: "assistant",
+                usage: {
+                  input_tokens: 1200,
+                  output_tokens: 350,
+                  cache_creation_input_tokens: 800,
+                  cache_read_input_tokens: 5000,
+                  cache_creation: { ephemeral_5m_input_tokens: 800, ephemeral_1h_input_tokens: 0 },
+                  service_tier: "standard",
+                },
+              },
+            };
+            writeFileSync(join(dir, "00000000-0000-4000-8000-000000000001.jsonl"), JSON.stringify(line) + "\n");
+            writeFileSync(process.env.GITHUB_ENV,
+              `CLAUDE_PROJECTS_DIR=${projects}\nTOKENS_HISTORY_DIR=${history}\n`, { flag: "a" });
+          '
+
+      - name: Installation
+        run: npm run setup -- --port "$PORT_TEST" --no-open
+
+      - name: État
+        run: |
+          npm run status -- --port "$PORT_TEST" | tee status.txt
+          grep -q "installé · serveur actif" status.txt
+
+      - name: L'API compte l'appel du faux journal
+        run: |
+          node -e '
+            const url = `http://127.0.0.1:${process.env.PORT_TEST}/api/usage?days=all`;
+            fetch(url).then(r => r.json()).then(d => {
+              console.log(JSON.stringify(d.total));
+              if (d.total.calls !== 1) throw new Error(`total.calls = ${d.total.calls}, attendu 1`);
+              if (d.total.costKnown !== true) throw new Error("total.costKnown devrait valoir true");
+            }).catch(e => { console.error(e); process.exit(1); });
+          '
+
+      - name: Désinstallation
+        run: npm run remove -- --port "$PORT_TEST"
+
+      - name: Le port ne répond plus
+        run: |
+          node -e '
+            const url = `http://127.0.0.1:${process.env.PORT_TEST}/`;
+            (async () => {
+              for (let i = 0; i < 20; i++) {
+                try { await fetch(url); } catch { console.log("Port libéré."); return; }
+                await new Promise(r => setTimeout(r, 500));
+              }
+              console.error("Le serveur répond encore après la désinstallation.");
+              process.exit(1);
+            })();
+          '
+          npm run status -- --port "$PORT_TEST" | tee status.txt
+          grep -q "non installé · serveur arrêté" status.txt
+
+      - name: Journal du serveur (en cas d'échec)
+        if: failure()
+        run: |
+          cat server.log 2>/dev/null || echo "(pas de server.log)"
+          ls -la ~/.config/autostart ~/.config/token-follow ~/.config/systemd/user 2>/dev/null || true
