@@ -66,8 +66,10 @@
   details { margin-top: 10px; font-size: 12px; }
   summary { cursor: pointer; color: var(--muted); }
 
-  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 12px; margin-top: 12px; }
-  @media (max-width: 420px) { .grid2 { grid-template-columns: 1fr; } }
+  /* Un tableau de 8 colonnes demande ~600 px : « Par modèle » prend 3/5 de la ligne à côté de la carte de chaleur,
+     les tableaux plus larges (projets, sessions) ont chacun leur ligne. Écran étroit : tout s'empile. */
+  .split, .stack { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin-top: 12px; }
+  @media (min-width: 1160px) { .split { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); } }
   .tablewrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
   th, td { text-align: right; padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
@@ -125,7 +127,7 @@
     <details><summary>Voir les données du graphique</summary><div class="tablewrap" id="dailyTable"></div></details>
   </section>
 
-  <div class="grid2">
+  <div class="split">
     <section class="card">
       <h2>Quand tu utilises Claude</h2>
       <div class="sub">Tokens facturables (entrée + sortie + écriture cache) par jour de la semaine et par heure.</div>
@@ -134,7 +136,7 @@
     <section class="card"><h2>Par modèle</h2><div class="sub">Part des tokens facturables.</div><div class="tablewrap" id="models"></div></section>
   </div>
 
-  <div class="grid2">
+  <div class="stack">
     <section class="card"><h2>Par projet</h2><div class="sub">Clique sur un projet pour filtrer toute la page.</div><div class="tablewrap" id="projects"></div></section>
     <section class="card"><h2>Sessions les plus gourmandes</h2><div class="sub">Classées par tokens facturables.</div><div class="tablewrap" id="sessions"></div></section>
   </div>
