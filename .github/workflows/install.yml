@@ -70,7 +70,7 @@ jobs:
       - name: État
         run: |
           npm run status -- --port "$PORT_TEST" | tee status.txt
-          grep -q "installé · serveur actif" status.txt
+          grep -q "Service installé · serveur actif" status.txt
 
       - name: L'API compte l'appel du faux journal
         run: |
@@ -100,7 +100,7 @@ jobs:
             })();
           '
           npm run status -- --port "$PORT_TEST" | tee status.txt
-          grep -q "non installé · serveur arrêté" status.txt
+          grep -q "Service non installé · serveur arrêté" status.txt
 
       - name: Journal du serveur (en cas d'échec)
         if: failure()
