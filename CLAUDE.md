@@ -24,6 +24,7 @@ Node ≥ 18 sans dépendance : `server.mjs` (lecture + agrégation), `index.html
 - Seule l'installation macOS a été testée en conditions réelles ; Linux et Windows sont écrits mais non vérifiés.
 
 ## Journal des améliorations (ajout seul, le plus récent en haut)
+- 2026-10-23 : dépôt renommé `claude-code-usage-dashboard` (trouvable par recherche) ; `npm run demo` (données fictives, sert aussi aux captures du README) ; README vitrine ; CI de l'installeur sur 3 OS + variante sans systemd ; `main` protégée (7 tests requis).
 - 2026-10-23 : dépôt GitHub public, installeur multiplateforme, chemins Windows.
 - 2026-10-19 : balayage auto toutes les 5 min (sans visiteur, l'historique ne se remplissait pas).
 - 2026-10-19 : création ; historique permanent ; démarrage auto ; équivalent API ; période « Tout ».
