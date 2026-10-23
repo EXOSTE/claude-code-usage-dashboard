@@ -10,13 +10,19 @@ on:
 
 jobs:
   install:
-    name: ${{ matrix.os }} · Node ${{ matrix.node }}
+    name: ${{ matrix.os }} · Node ${{ matrix.node }}${{ matrix.desktop && ' · sans systemd' || '' }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
         node: [18, 22]
+        include:
+          # Les runners Ubuntu ont un systemd --user : on le rend injoignable pour
+          # tester l'autre branche (.desktop + start.sh + lancement détaché).
+          - os: ubuntu-latest
+            node: 22
+            desktop: true
     defaults:
       run:
         shell: bash
@@ -28,6 +34,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
+
+      - name: Couper l'accès à systemd --user
+        if: matrix.desktop
+        run: |
+          echo "XDG_RUNTIME_DIR=$RUNNER_TEMP/no-runtime" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=unix:path=$RUNNER_TEMP/no-bus" >> "$GITHUB_ENV"
 
       - name: Faux journal Claude Code et dossiers temporaires
         run: |
@@ -68,12 +80,21 @@ jobs:
         run: npm run setup -- --port "$PORT_TEST" --no-open
 
       - name: Fichier de démarrage créé
+        env:
+          DESKTOP: ${{ matrix.desktop }}
         run: |
           case "$RUNNER_OS" in
-            Linux)   ls -la ~/.config/systemd/user/token-follow.service ~/.config/autostart/token-follow.desktop ~/.config/token-follow/start.sh 2>&1 || true ;;
-            Windows) ls -la "$APPDATA/Microsoft/Windows/Start Menu/Programs/Startup/token-follow.vbs" ;;
-            macOS)   ls -la ~/Library/LaunchAgents/com.token-follow.plist ;;
+            Linux)
+              if [ "$DESKTOP" = true ]; then
+                files=(~/.config/autostart/token-follow.desktop ~/.config/token-follow/start.sh)
+                test ! -e ~/.config/systemd/user/token-follow.service
+              else
+                files=(~/.config/systemd/user/token-follow.service)
+              fi ;;
+            Windows) files=("$APPDATA/Microsoft/Windows/Start Menu/Programs/Startup/token-follow.vbs") ;;
+            macOS)   files=(~/Library/LaunchAgents/com.token-follow.plist) ;;
           esac
+          for f in "${files[@]}"; do ls -la "$f"; cat "$f"; echo; done
 
       - name: État
         run: |
@@ -109,6 +130,8 @@ jobs:
           '
           npm run status -- --port "$PORT_TEST" | tee status.txt
           grep -q "Service non installé · serveur arrêté" status.txt
+          ! ls ~/.config/autostart/token-follow.desktop ~/.config/token-follow ~/.config/systemd/user/token-follow.service \
+            ~/Library/LaunchAgents/com.token-follow.plist "$APPDATA/Microsoft/Windows/Start Menu/Programs/Startup/token-follow.vbs" 2>/dev/null
 
       - name: Journal du serveur (en cas d'échec)
         if: failure()
